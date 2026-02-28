@@ -1,0 +1,31 @@
+export const ui = {
+    colors: {
+        bg: '#0a0f16',
+        panel: '#121a26',
+        panelElevated: '#1a2333',
+        panelMuted: '#1f2938',
+        border: '#2c3950',
+        textPrimary: '#eef3ff',
+        textSecondary: '#a5b4cf',
+        textMuted: '#7f8da7',
+        accent: '#67a5ff',
+        accentDeep: '#2e67d3',
+        success: '#2dd4bf',
+        danger: '#fb7185',
+        warning: '#fbbf24',
+    },
+    radius: {
+        sm: 10,
+        md: 16,
+        lg: 22,
+        xl: 30,
+        pill: 999,
+    },
+    spacing: {
+        xs: 6,
+        sm: 10,
+        md: 14,
+        lg: 20,
+        xl: 28,
+    },
+};

@@ -1,0 +1,47 @@
+# macOS Anchor Advertiser
+
+This folder lets a Mac act as a BLE anchor for your existing Android scanner flow.
+
+It advertises the same format your app expects:
+- Service UUID: `00001802-0000-1000-8000-00805f9b34fb`
+- Service Data payload: UTF-8 bytes of `BLUEPOINT-XX`
+
+## Files
+- `anchor.sh`: launcher script (interactive or CLI).
+- `BLEAnchorAdvertiser.swift`: CoreBluetooth advertiser implementation.
+
+## Requirements
+- macOS with BLE peripheral advertising support.
+- Xcode Command Line Tools (`swiftc`).
+- Bluetooth ON.
+
+## First-time setup
+```bash
+cd /Users/maasir/Projects/radiomap/mac
+chmod +x anchor.sh
+./anchor.sh --build-only
+```
+
+## Run
+Interactive mode:
+```bash
+./anchor.sh
+```
+
+Direct index:
+```bash
+./anchor.sh --index 1
+```
+
+Direct ID:
+```bash
+./anchor.sh --id BLUEPOINT-01
+```
+
+Stop advertising:
+- Press `Ctrl+C`.
+
+## Notes
+- If macOS asks for Bluetooth permission, allow it.
+- Some Mac hardware may not support BLE peripheral mode; the tool will report if unsupported.
+- For 4 anchors, run on 4 separate devices with unique IDs (`BLUEPOINT-01..04`).
