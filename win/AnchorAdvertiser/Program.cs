@@ -31,9 +31,12 @@ try
     {
         LocalName = anchorId
     };
-    advertisement.ServiceUuids.Add(serviceUuid);
 
-    // Add 128-bit service-data section (AD type 0x21):
+    // Keep payload compact and prioritize identity fields:
+    // LocalName + 128-bit service-data section (AD type 0x21).
+    // Omitting the separate Service UUID list reduces risk of payload truncation.
+    //
+    // Section format:
     // [serviceUuid (16 bytes LE)] + [payload UTF-8 bytes].
     var uuidBytes = serviceUuid.ToByteArray();
     var payloadBytes = Encoding.UTF8.GetBytes(anchorId);

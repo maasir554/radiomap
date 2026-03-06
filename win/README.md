@@ -8,8 +8,7 @@ It uses:
 
 ## Broadcast format
 - Local Name: `BLUEPOINT-XX`
-- Service UUID: `00001802-0000-1000-8000-00805f9b34fb`
-- Service Data section (128-bit): UUID + UTF-8 payload `BLUEPOINT-XX`
+- Service Data section (128-bit): UUID `00001802-0000-1000-8000-00805f9b34fb` + UTF-8 payload `BLUEPOINT-XX`
 
 Your Android scanner can discover it by name (`BLUEPOINT-*`) and BLE metadata.
 
