@@ -11,7 +11,7 @@
 
 ### 1) Clone and install deps
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/maasir554/radiomap
 cd radiomap
 npm install
 ```
