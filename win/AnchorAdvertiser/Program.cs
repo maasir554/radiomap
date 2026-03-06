@@ -41,8 +41,8 @@ try
     var uuidBytes = serviceUuid.ToByteArray();
     var payloadBytes = Encoding.UTF8.GetBytes(anchorId);
     var sectionBytes = new byte[uuidBytes.Length + payloadBytes.Length];
-    Buffer.BlockCopy(uuidBytes, 0, sectionBytes, 0, uuidBytes.Length);
-    Buffer.BlockCopy(payloadBytes, 0, sectionBytes, uuidBytes.Length, payloadBytes.Length);
+    System.Buffer.BlockCopy(uuidBytes, 0, sectionBytes, 0, uuidBytes.Length);
+    System.Buffer.BlockCopy(payloadBytes, 0, sectionBytes, uuidBytes.Length, payloadBytes.Length);
 
     var writer = new DataWriter();
     writer.WriteBytes(sectionBytes);
