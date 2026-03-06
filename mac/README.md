@@ -38,10 +38,17 @@ Direct ID:
 ./anchor.sh --id BLUEPOINT-01
 ```
 
+Direct ID with optional meter coordinates:
+```bash
+./anchor.sh --id BLUEPOINT-01 --x 0 --y 5
+```
+
 Stop advertising:
 - Press `Ctrl+C`.
 
 ## Notes
 - If macOS asks for Bluetooth permission, allow it.
-- Some Mac hardware may not support BLE peripheral mode; the tool will report if unsupported.
+- Some Mac hardware may not support BLE peripheral mode; the tool will report and exit if unsupported.
+- If Bluetooth is OFF or permission is denied, the tool prints the reason and exits (no hang).
 - For 4 anchors, run on 4 separate devices with unique IDs (`BLUEPOINT-01..04`).
+- Coordinate flags are optional metadata for operator setup logs; BLE service data format remains `BLUEPOINT-XX` for scanner compatibility.

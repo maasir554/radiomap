@@ -3,7 +3,7 @@ import { Anchor, Position } from '../utils/PositioningEngine';
 
 export type AppRole = 'mobile' | 'anchor' | 'local' | 'none';
 export const REFERENCE_ANCHOR_ID = 'BLUEPOINT-01';
-type AnchorState = Anchor & { A: number, h: number, currentRssi?: number, distance?: number };
+type AnchorState = Anchor & { A: number, h: number, peripheralId?: string, currentRssi?: number, distance?: number };
 
 const sanitizeDimension = (value: number, fallback: number): number => {
     if (!Number.isFinite(value) || value <= 0) return fallback;
@@ -27,6 +27,7 @@ interface AppState {
     anchors: AnchorState[];
     updateAnchorRssi: (id: string, rssi: number) => void;
     setAnchors: (anchors: AnchorState[]) => void;
+    setAnchorPeripheral: (id: string, peripheralId?: string) => void;
 
     currentPosition: Position | null;
     setCurrentPosition: (pos: Position | null) => void;
@@ -85,6 +86,11 @@ export const useStore = create<AppState>((set) => ({
             anchor.id === REFERENCE_ANCHOR_ID ? { ...anchor, h: 0 } : anchor
         ),
     }),
+    setAnchorPeripheral: (id, peripheralId) => set((state) => ({
+        anchors: state.anchors.map((anchor) =>
+            anchor.id === id ? { ...anchor, peripheralId } : anchor
+        ),
+    })),
 
     updateAnchorRssi: (id, rssi) => set((state) => ({
         anchors: state.anchors.map((a) => a.id === id ? { ...a, currentRssi: rssi } : a)

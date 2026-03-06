@@ -68,28 +68,48 @@ class AnchorAdvertiserModule(private val reactContext: ReactApplicationContext) 
             .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_MEDIUM)
             .setConnectable(false)
             .build()
-        val data = AdvertiseData.Builder()
-            .setIncludeDeviceName(false)
-            .setIncludeTxPowerLevel(false)
-            .addServiceUuid(serviceUuid)
-            .addServiceData(serviceUuid, payload)
-            .build()
 
-        val callback = object : AdvertiseCallback() {
-            override fun onStartSuccess(settingsInEffect: AdvertiseSettings?) {
-                isAdvertising = true
-                promise.resolve(true)
+        fun buildData(includeManufacturer: Boolean): AdvertiseData {
+            val builder = AdvertiseData.Builder()
+                .setIncludeDeviceName(false)
+                .setIncludeTxPowerLevel(false)
+                .addServiceUuid(serviceUuid)
+                .addServiceData(serviceUuid, payload)
+
+            if (includeManufacturer) {
+                builder.addManufacturerData(MANUFACTURER_ID, payload)
             }
 
-            override fun onStartFailure(errorCode: Int) {
-                isAdvertising = false
-                advertiserCallback = null
-                promise.reject("ADVERTISE_FAILED", "Failed to start advertising. Code: $errorCode")
-            }
+            return builder.build()
         }
 
-        advertiserCallback = callback
-        advertiser.startAdvertising(settings, data, callback)
+        fun startAttempt(includeManufacturer: Boolean) {
+            val data = buildData(includeManufacturer)
+            val callback = object : AdvertiseCallback() {
+                override fun onStartSuccess(settingsInEffect: AdvertiseSettings?) {
+                    isAdvertising = true
+                    advertiserCallback = this
+                    promise.resolve(true)
+                }
+
+                override fun onStartFailure(errorCode: Int) {
+                    advertiserCallback = null
+                    if (includeManufacturer && errorCode == AdvertiseCallback.ADVERTISE_FAILED_DATA_TOO_LARGE) {
+                        // Retry with the minimal payload for devices with tighter AD packet limits.
+                        startAttempt(false)
+                        return
+                    }
+
+                    isAdvertising = false
+                    promise.reject("ADVERTISE_FAILED", "Failed to start advertising. Code: $errorCode")
+                }
+            }
+
+            advertiserCallback = callback
+            advertiser.startAdvertising(settings, data, callback)
+        }
+
+        startAttempt(true)
     }
 
     @ReactMethod
@@ -119,5 +139,7 @@ class AnchorAdvertiserModule(private val reactContext: ReactApplicationContext) 
 
     companion object {
         private const val SERVICE_UUID = "00001802-0000-1000-8000-00805f9b34fb"
+        // Internal test identifier used to carry anchor ID redundantly.
+        private const val MANUFACTURER_ID = 0xFFFF
     }
 }

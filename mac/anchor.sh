@@ -12,6 +12,7 @@ Usage:
   ./anchor.sh                 # interactive mode (choose BLUEPOINT-01..04)
   ./anchor.sh --index 3       # starts BLUEPOINT-03
   ./anchor.sh --id BLUEPOINT-07
+  ./anchor.sh --id BLUEPOINT-01 --x 0 --y 5
   ./anchor.sh --build-only
 
 Notes:
@@ -36,6 +37,11 @@ resolve_anchor_id_from_index() {
   printf "BLUEPOINT-%02d" "${idx}"
 }
 
+validate_meter_value() {
+  local value="$1"
+  [[ "${value}" =~ ^-?[0-9]+([.][0-9]+)?$ ]]
+}
+
 build_binary_if_needed() {
   mkdir -p "${BUILD_DIR}"
 
@@ -57,8 +63,29 @@ prompt_index() {
   resolve_anchor_id_from_index "${selected}"
 }
 
+prompt_coordinates() {
+  local x_input=""
+  local y_input=""
+
+  printf "Enter X coordinate in meters (blank to skip): "
+  read -r x_input
+  if [[ -z "${x_input}" ]]; then
+    echo ""
+    return 0
+  fi
+  validate_meter_value "${x_input}" || { echo "Invalid X coordinate."; return 1; }
+
+  printf "Enter Y coordinate in meters: "
+  read -r y_input
+  validate_meter_value "${y_input}" || { echo "Invalid Y coordinate."; return 1; }
+
+  echo "${x_input},${y_input}"
+}
+
 ANCHOR_ID=""
 BUILD_ONLY=0
+COORD_X=""
+COORD_Y=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -72,6 +99,18 @@ while [[ $# -gt 0 ]]; do
       [[ $# -ge 2 ]] || { echo "Missing value for --id"; usage; exit 2; }
       ANCHOR_ID="$(echo "$2" | tr '[:lower:]' '[:upper:]')"
       validate_id "${ANCHOR_ID}" || { echo "Invalid ID: ${ANCHOR_ID}"; exit 2; }
+      shift 2
+      ;;
+    --x)
+      [[ $# -ge 2 ]] || { echo "Missing value for --x"; usage; exit 2; }
+      COORD_X="$2"
+      validate_meter_value "${COORD_X}" || { echo "Invalid X coordinate: ${COORD_X}"; exit 2; }
+      shift 2
+      ;;
+    --y)
+      [[ $# -ge 2 ]] || { echo "Missing value for --y"; usage; exit 2; }
+      COORD_Y="$2"
+      validate_meter_value "${COORD_Y}" || { echo "Invalid Y coordinate: ${COORD_Y}"; exit 2; }
       shift 2
       ;;
     --build-only)
@@ -101,5 +140,23 @@ if [[ -z "${ANCHOR_ID}" ]]; then
   [[ -n "${ANCHOR_ID}" ]] || { echo "Invalid selection."; exit 2; }
 fi
 
+if [[ -n "${COORD_X}" && -z "${COORD_Y}" ]] || [[ -z "${COORD_X}" && -n "${COORD_Y}" ]]; then
+  echo "Both --x and --y must be provided together."
+  exit 2
+fi
+
+if [[ -z "${COORD_X}" && -z "${COORD_Y}" ]]; then
+  coord_pair="$(prompt_coordinates || true)"
+  if [[ -n "${coord_pair}" ]]; then
+    COORD_X="${coord_pair%%,*}"
+    COORD_Y="${coord_pair##*,}"
+  fi
+fi
+
 echo "Starting advertiser for ${ANCHOR_ID}..."
-"${BINARY_PATH}" "${ANCHOR_ID}"
+if [[ -n "${COORD_X}" ]]; then
+  echo "Using coordinates: x=${COORD_X}m, y=${COORD_Y}m"
+  "${BINARY_PATH}" --id "${ANCHOR_ID}" --x "${COORD_X}" --y "${COORD_Y}"
+else
+  "${BINARY_PATH}" --id "${ANCHOR_ID}"
+fi

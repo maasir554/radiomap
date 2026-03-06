@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert, BackHandler, Platform } from 'react-native';
 import { REFERENCE_ANCHOR_ID, useStore } from '../store/useStore';
-import { bleService } from '../services/BleService';
+import { bleService, type BleDebugSnapshot } from '../services/BleService';
 import { TipsButton } from '../components/TipsButton';
 import { TopNav } from '../components/TopNav';
 import { ui } from '../theme/ui';
@@ -15,6 +15,7 @@ export const SetupScreen: React.FC<{ onComplete: () => void }> = ({ onComplete }
         setPhoneHeightRelative,
         anchors,
         setAnchors,
+        setAnchorPeripheral,
         isScanning,
         setRole
     } = useStore();
@@ -22,6 +23,7 @@ export const SetupScreen: React.FC<{ onComplete: () => void }> = ({ onComplete }
     const [width, setWidth] = useState(roomSize.width.toString());
     const [height, setHeight] = useState(roomSize.height.toString());
     const [phoneHeight, setPhoneHeight] = useState(phoneHeightRelative.toString());
+    const [bleDebug, setBleDebug] = useState<BleDebugSnapshot>(() => bleService.getDebugSnapshot());
     const [anchorHeights, setAnchorHeights] = useState<Record<string, string>>(
         anchors.reduce((acc, anchor) => ({ ...acc, [anchor.id]: anchor.h.toString() }), {})
     );
@@ -91,6 +93,14 @@ export const SetupScreen: React.FC<{ onComplete: () => void }> = ({ onComplete }
         return () => subscription.remove();
     }, [step]);
 
+    useEffect(() => {
+        if (step !== 3) return;
+        const syncDebug = () => setBleDebug(bleService.getDebugSnapshot());
+        syncDebug();
+        const timer = setInterval(syncDebug, 800);
+        return () => clearInterval(timer);
+    }, [step, isScanning]);
+
     const calibrateAnchor = async (id: string) => {
         const anchor = anchors.find(a => a.id === id);
         if (anchor && anchor.currentRssi !== undefined) {
@@ -100,8 +110,35 @@ export const SetupScreen: React.FC<{ onComplete: () => void }> = ({ onComplete }
             setAnchors(newAnchors);
             Alert.alert('Calibration', `Calibrated ${id} with A = ${anchor.currentRssi.toFixed(1)}`);
         } else {
-            Alert.alert('Error', `No signal from ${id}. Ensure it's broadcasting.`);
+            Alert.alert('Error', `No signal from ${id}. Ensure it's broadcasting or bind its device ID in BLE Debug.`);
         }
+    };
+
+    const clearPeripheralBinding = (peripheralId: string) => {
+        anchors.forEach((anchor) => {
+            if (anchor.peripheralId?.toUpperCase() === peripheralId.toUpperCase()) {
+                setAnchorPeripheral(anchor.id, undefined);
+            }
+        });
+    };
+
+    const bindPeripheralToAnchor = (peripheralId: string) => {
+        Alert.alert(
+            'Assign Anchor',
+            `Bind ${peripheralId} to which BLUEPOINT?`,
+            [
+                ...anchors.map((anchor) => ({
+                    text: anchor.id,
+                    onPress: () => setAnchorPeripheral(anchor.id, peripheralId),
+                })),
+                {
+                    text: 'Clear Binding',
+                    onPress: () => clearPeripheralBinding(peripheralId),
+                    style: 'destructive' as const,
+                },
+                { text: 'Cancel', style: 'cancel' as const },
+            ]
+        );
     };
 
     const handleCalibrationScanToggle = async () => {
@@ -111,9 +148,11 @@ export const SetupScreen: React.FC<{ onComplete: () => void }> = ({ onComplete }
             } else {
                 await bleService.startScanning();
             }
+            setBleDebug(bleService.getDebugSnapshot());
         } catch (error) {
             const message = error instanceof Error ? error.message : 'Failed to update scan state.';
             Alert.alert('BLE error', message);
+            setBleDebug(bleService.getDebugSnapshot());
         }
     };
 
@@ -199,6 +238,9 @@ export const SetupScreen: React.FC<{ onComplete: () => void }> = ({ onComplete }
                             >
                                 <Text style={styles.actionText}>Calibrate {a.id}</Text>
                                 <Text style={styles.metaText}>Current RSSI: {a.currentRssi || 'N/A'} dBm</Text>
+                                <Text style={styles.metaTextSecondary}>
+                                    {`Bound device: ${a.peripheralId ?? 'Auto-detect from broadcast payload'}`}
+                                </Text>
                             </TouchableOpacity>
                         ))}
                         <TouchableOpacity
@@ -207,6 +249,52 @@ export const SetupScreen: React.FC<{ onComplete: () => void }> = ({ onComplete }
                         >
                             <Text style={styles.actionText}>{isScanning ? 'Stop Calibration Scan' : 'Start Calibration Scan'}</Text>
                         </TouchableOpacity>
+
+                        <View style={styles.debugCard}>
+                            <Text style={styles.debugTitle}>BLE Debug</Text>
+                            <Text style={styles.debugMeta}>
+                                {`Scan: ${bleDebug.isScanning ? 'ON' : 'OFF'} | Mode: ${bleDebug.scanMode}${bleDebug.fallbackScanApplied ? ' (fallback)' : ''}`}
+                            </Text>
+                            <Text style={styles.debugMeta}>
+                                {`Events callback/poll: ${bleDebug.callbackEvents}/${bleDebug.pollEvents} | Parsed anchors: ${bleDebug.parsedAnchorsSinceScanStart}`}
+                            </Text>
+                            <Text style={styles.debugMeta}>
+                                {`Unique peripherals seen: ${bleDebug.visiblePeripheralCount}`}
+                            </Text>
+                            {bleDebug.lastScanError ? (
+                                <Text style={styles.debugError}>{`Last error: ${bleDebug.lastScanError}`}</Text>
+                            ) : null}
+                            {bleDebug.peripherals.length === 0 ? (
+                                <Text style={styles.debugHint}>
+                                    No BLE peripherals discovered yet. Keep Bluetooth and location services ON on this phone and keep anchors advertising.
+                                </Text>
+                            ) : (
+                                bleDebug.peripherals.map((peripheral) => (
+                                    <TouchableOpacity
+                                        key={peripheral.key}
+                                        style={styles.debugRow}
+                                        activeOpacity={0.75}
+                                        onPress={() => {
+                                            if (!peripheral.peripheralId) return;
+                                            bindPeripheralToAnchor(peripheral.peripheralId);
+                                        }}
+                                    >
+                                        <Text style={styles.debugName}>
+                                            {peripheral.parsedAnchorId ?? peripheral.name ?? peripheral.localName ?? peripheral.peripheralId ?? 'Unknown'}
+                                        </Text>
+                                        <Text style={styles.debugValue}>
+                                            {`${peripheral.rssi ?? 'N/A'} dBm`}
+                                        </Text>
+                                        <Text style={styles.debugSub}>
+                                            {`src:${peripheral.source} ${peripheral.peripheralId ? `| id:${peripheral.peripheralId}` : ''}`}
+                                        </Text>
+                                        <Text style={styles.debugTapHint}>
+                                            {peripheral.peripheralId ? 'Tap to bind this device to an anchor' : ''}
+                                        </Text>
+                                    </TouchableOpacity>
+                                ))
+                            )}
+                        </View>
                     </View>
                 )}
 
@@ -337,6 +425,11 @@ const styles = StyleSheet.create({
         fontSize: 12,
         marginTop: 4,
     },
+    metaTextSecondary: {
+        color: ui.colors.textMuted,
+        fontSize: 11,
+        marginTop: 2,
+    },
     nextButton: {
         marginTop: ui.spacing.md,
         backgroundColor: ui.colors.textPrimary,
@@ -348,5 +441,62 @@ const styles = StyleSheet.create({
         color: '#0d1320',
         fontSize: 16,
         fontWeight: '800',
+    },
+    debugCard: {
+        marginTop: ui.spacing.md,
+        borderRadius: ui.radius.md,
+        borderWidth: 1,
+        borderColor: ui.colors.border,
+        padding: ui.spacing.md,
+        backgroundColor: '#101828',
+    },
+    debugTitle: {
+        color: ui.colors.textPrimary,
+        fontSize: 14,
+        fontWeight: '800',
+        marginBottom: 6,
+    },
+    debugMeta: {
+        color: ui.colors.textSecondary,
+        fontSize: 12,
+        marginBottom: 4,
+    },
+    debugError: {
+        color: '#fca5a5',
+        fontSize: 12,
+        marginTop: 4,
+        marginBottom: 4,
+    },
+    debugHint: {
+        color: ui.colors.textMuted,
+        fontSize: 12,
+        marginTop: 6,
+        lineHeight: 18,
+    },
+    debugRow: {
+        marginTop: 8,
+        paddingTop: 8,
+        borderTopWidth: 1,
+        borderTopColor: '#273244',
+    },
+    debugName: {
+        color: ui.colors.textPrimary,
+        fontSize: 12,
+        fontWeight: '700',
+    },
+    debugValue: {
+        color: '#a5b4fc',
+        fontSize: 12,
+        marginTop: 2,
+    },
+    debugSub: {
+        color: ui.colors.textMuted,
+        fontSize: 11,
+        marginTop: 2,
+    },
+    debugTapHint: {
+        color: '#8fa6c8',
+        fontSize: 10,
+        marginTop: 4,
     },
 });
