@@ -18,6 +18,7 @@ import { bleService, type BleDebugSnapshot } from '../services/BleService';
 import { TipsButton } from '../components/TipsButton';
 import { TopNav } from '../components/TopNav';
 import { ui } from '../theme/ui';
+import { VisualSetupModal } from '../components/VisualSetupModal';
 
 export const SetupScreen: React.FC<{ onComplete: () => void }> = ({ onComplete }) => {
     const [step, setStep] = useState(1);
@@ -40,6 +41,8 @@ export const SetupScreen: React.FC<{ onComplete: () => void }> = ({ onComplete }
     const [calibratingAnchorId, setCalibratingAnchorId] = useState<string | null>(null);
     const [calibratedAValues, setCalibratedAValues] = useState<Record<string, number>>({});
     const [isDebugModalVisible, setIsDebugModalVisible] = useState(false);
+    const [isVisualSetupVisible, setIsVisualSetupVisible] = useState(false);
+    const [hasCustomAnchorLayout, setHasCustomAnchorLayout] = useState(false);
     const [anchorHeights, setAnchorHeights] = useState<Record<string, string>>(
         anchors.reduce((acc, anchor) => ({ ...acc, [anchor.id]: anchor.h.toString() }), {})
     );
@@ -56,17 +59,36 @@ export const SetupScreen: React.FC<{ onComplete: () => void }> = ({ onComplete }
         return parsed;
     };
 
+    const applyDefaultCornerAnchors = (widthMeters: number, heightMeters: number) => {
+        const cornerById: Record<string, { x: number; y: number }> = {
+            [REFERENCE_ANCHOR_ID]: { x: 0, y: 0 },
+            'BLUEPOINT-02': { x: widthMeters, y: 0 },
+            'BLUEPOINT-03': { x: 0, y: heightMeters },
+            'BLUEPOINT-04': { x: widthMeters, y: heightMeters },
+        };
+
+        setAnchors(
+            anchors.map((anchor) => {
+                const corner = cornerById[anchor.id];
+                return corner ? { ...anchor, ...corner } : anchor;
+            })
+        );
+    };
+
     const handleNext = () => {
         if (step === 1) {
             const parsedWidth = parsePositiveNumber(width);
             const parsedHeight = parsePositiveNumber(height);
             const parsedPhoneHeight = parseSignedNumber(phoneHeight);
             if (parsedWidth === null || parsedHeight === null || parsedPhoneHeight === null) {
-                Alert.alert('Invalid input', 'Width and height must be positive values. Phone height must be numeric.');
+                Alert.alert('Invalid input', 'Length (X) and breadth (Y) must be positive values. Phone height must be numeric.');
                 return;
             }
             setRoomSize(parsedWidth, parsedHeight);
             setPhoneHeightRelative(parsedPhoneHeight);
+            if (!hasCustomAnchorLayout) {
+                applyDefaultCornerAnchors(parsedWidth, parsedHeight);
+            }
             setStep(2);
         } else if (step === 2) {
             const updatedAnchors = anchors.map((anchor) => {
@@ -222,7 +244,7 @@ export const SetupScreen: React.FC<{ onComplete: () => void }> = ({ onComplete }
             >
                 {step === 1 && (
                     <View style={styles.card}>
-                        <Text style={styles.label}>Room Width (m)</Text>
+                        <Text style={styles.label}>Room Length (X-axis, m)</Text>
                         <TextInput
                             style={styles.input}
                             value={width}
@@ -230,7 +252,7 @@ export const SetupScreen: React.FC<{ onComplete: () => void }> = ({ onComplete }
                             keyboardType="numeric"
                             placeholderTextColor={ui.colors.textMuted}
                         />
-                        <Text style={styles.label}>Room Height (m)</Text>
+                        <Text style={styles.label}>Room Breadth (Y-axis, m)</Text>
                         <TextInput
                             style={styles.input}
                             value={height}
@@ -238,6 +260,7 @@ export const SetupScreen: React.FC<{ onComplete: () => void }> = ({ onComplete }
                             keyboardType="numeric"
                             placeholderTextColor={ui.colors.textMuted}
                         />
+                        <Text style={styles.helperTextNormal}>Length maps to X-axis and breadth maps to Y-axis in tracking/map coordinates.</Text>
                         <Text style={styles.label}>{`Test Phone Height Relative to ${REFERENCE_ANCHOR_ID} (m)`}</Text>
                         <TextInput
                             style={styles.input}
@@ -249,13 +272,16 @@ export const SetupScreen: React.FC<{ onComplete: () => void }> = ({ onComplete }
                         <Text style={styles.helperText}>
                             Enter relative height from anchor {REFERENCE_ANCHOR_ID}. Use positive if phone is above, negative if below, 0 if same level.
                         </Text>
+                        <TouchableOpacity style={styles.visualSetupButton} onPress={() => setIsVisualSetupVisible(true)}>
+                            <Text style={styles.visualSetupButtonText}>Visual Setup</Text>
+                        </TouchableOpacity>
                     </View>
                 )}
 
                 {step === 2 && (
                     <View style={styles.card}>
                         <Text style={styles.description}>
-                            Place anchors at room corners and set each anchor height relative to {REFERENCE_ANCHOR_ID} (m). {REFERENCE_ANCHOR_ID} is fixed at 0.
+                            Verify anchor positions and set each anchor height relative to {REFERENCE_ANCHOR_ID} (m). {REFERENCE_ANCHOR_ID} is fixed at 0.
                         </Text>
                         <Text style={styles.helperTextNormal}>
                             Example: if an anchor is 0.35m above {REFERENCE_ANCHOR_ID}, enter 0.35. If below, enter a negative value.
@@ -393,6 +419,25 @@ export const SetupScreen: React.FC<{ onComplete: () => void }> = ({ onComplete }
                     </View>
                 </View>
             </Modal>
+
+            <VisualSetupModal
+                visible={isVisualSetupVisible}
+                initialWidth={Number(width) || roomSize.width}
+                initialHeight={Number(height) || roomSize.height}
+                anchors={anchors.map((a) => ({ id: a.id, x: a.x, y: a.y }))}
+                onClose={() => setIsVisualSetupVisible(false)}
+                onSave={({ width: nextWidth, height: nextHeight, anchors: nextAnchors }) => {
+                    setWidth(String(nextWidth));
+                    setHeight(String(nextHeight));
+                    setRoomSize(nextWidth, nextHeight);
+                    const mapped = anchors.map((a) => {
+                        const updated = nextAnchors.find((na) => na.id === a.id);
+                        return updated ? { ...a, x: updated.x, y: updated.y } : a;
+                    });
+                    setAnchors(mapped);
+                    setHasCustomAnchorLayout(true);
+                }}
+            />
         </View>
     );
 };
@@ -435,6 +480,20 @@ const styles = StyleSheet.create({
         fontSize: 12,
         lineHeight: 18,
         marginTop: -6,
+    },
+    visualSetupButton: {
+        marginTop: ui.spacing.md,
+        borderRadius: ui.radius.pill,
+        backgroundColor: '#dbeafe',
+        borderWidth: 1,
+        borderColor: '#bfd8ff',
+        paddingVertical: 12,
+        alignItems: 'center',
+    },
+    visualSetupButtonText: {
+        color: '#0d1320',
+        fontWeight: '800',
+        fontSize: 14,
     },
     helperTextNormal: {
         color: ui.colors.textMuted,

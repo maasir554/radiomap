@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { SafeAreaView, StatusBar, StyleSheet } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useStore } from './src/store/useStore';
 import { bleService } from './src/services/BleService';
 import { RoleSelectionScreen } from './src/screens/RoleSelectionScreen';
@@ -62,10 +63,12 @@ export default function App() {
     };
 
     return (
-        <SafeAreaView style={styles.container}>
-            <StatusBar barStyle="light-content" backgroundColor={ui.colors.bg} translucent={false} />
-            {renderContent()}
-        </SafeAreaView>
+        <GestureHandlerRootView style={styles.container}>
+            <SafeAreaView style={styles.container}>
+                <StatusBar barStyle="light-content" backgroundColor={ui.colors.bg} translucent={false} />
+                {renderContent()}
+            </SafeAreaView>
+        </GestureHandlerRootView>
     );
 }
 

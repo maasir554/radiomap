@@ -9,6 +9,7 @@ const sanitizeDimension = (value: number, fallback: number): number => {
     if (!Number.isFinite(value) || value <= 0) return fallback;
     return value;
 };
+const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value));
 
 interface AppState {
     role: AppRole;
@@ -52,17 +53,13 @@ export const useStore = create<AppState>((set) => ({
     setRoomSize: (width, height) => set((state) => {
         const safeWidth = sanitizeDimension(width, state.roomSize.width);
         const safeHeight = sanitizeDimension(height, state.roomSize.height);
-        const cornerPositions: Record<string, { x: number; y: number }> = {
-            [REFERENCE_ANCHOR_ID]: { x: 0, y: 0 },
-            'BLUEPOINT-02': { x: safeWidth, y: 0 },
-            'BLUEPOINT-03': { x: 0, y: safeHeight },
-            'BLUEPOINT-04': { x: safeWidth, y: safeHeight },
-        };
 
         const anchors = state.anchors.map((anchor) => {
-            const corner = cornerPositions[anchor.id];
-            if (!corner) return anchor;
-            return { ...anchor, ...corner };
+            return {
+                ...anchor,
+                x: clamp(anchor.x, 0, safeWidth),
+                y: clamp(anchor.y, 0, safeHeight),
+            };
         });
 
         return {
