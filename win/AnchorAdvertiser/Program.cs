@@ -5,7 +5,7 @@ using Windows.Devices.Bluetooth;
 using Windows.Storage.Streams;
 
 const string ServiceUuidText = "00001802-0000-1000-8000-00805f9b34fb";
-var serviceUuid = Guid.Parse(ServiceUuidText);
+const ushort ServiceUuid16 = 0x1802;
 
 if (!TryParseAnchorId(args, out var anchorId))
 {
@@ -27,26 +27,21 @@ BluetoothLEAdvertisementPublisher? publisher = null;
 
 try
 {
-    var advertisement = new BluetoothLEAdvertisement
-    {
-        LocalName = anchorId
-    };
+    var advertisement = new BluetoothLEAdvertisement();
 
-    // Keep payload compact and prioritize identity fields:
-    // LocalName + 128-bit service-data section (AD type 0x21).
-    // Omitting the separate Service UUID list reduces risk of payload truncation.
+    // Keep payload compact to fit legacy advertisement size limits on Windows.
+    // Use Service Data - 16-bit UUID (AD type 0x16):
+    // [serviceUuid16 (2 bytes LE)] + [payload UTF-8 bytes].
     //
-    // Section format:
-    // [serviceUuid (16 bytes LE)] + [payload UTF-8 bytes].
-    var uuidBytes = serviceUuid.ToByteArray();
     var payloadBytes = Encoding.UTF8.GetBytes(anchorId);
-    var sectionBytes = new byte[uuidBytes.Length + payloadBytes.Length];
-    System.Buffer.BlockCopy(uuidBytes, 0, sectionBytes, 0, uuidBytes.Length);
-    System.Buffer.BlockCopy(payloadBytes, 0, sectionBytes, uuidBytes.Length, payloadBytes.Length);
+    var sectionBytes = new byte[2 + payloadBytes.Length];
+    sectionBytes[0] = (byte)(ServiceUuid16 & 0xFF);
+    sectionBytes[1] = (byte)((ServiceUuid16 >> 8) & 0xFF);
+    System.Buffer.BlockCopy(payloadBytes, 0, sectionBytes, 2, payloadBytes.Length);
 
     var writer = new DataWriter();
     writer.WriteBytes(sectionBytes);
-    advertisement.DataSections.Add(new BluetoothLEAdvertisementDataSection(0x21, writer.DetachBuffer()));
+    advertisement.DataSections.Add(new BluetoothLEAdvertisementDataSection(0x16, writer.DetachBuffer()));
 
     publisher = new BluetoothLEAdvertisementPublisher(advertisement);
     publisher.StatusChanged += (_, e) =>
@@ -74,6 +69,7 @@ try
 
     Console.WriteLine($"Starting Windows anchor for {anchorId}...");
     Console.WriteLine($"Service UUID: {ServiceUuidText}");
+    Console.WriteLine("Broadcast payload mode: compact service-data (16-bit UUID + BLUEPOINT id)");
     Console.WriteLine("Press Ctrl+C to stop.");
 
     publisher.Start();
