@@ -16,8 +16,9 @@ It advertises the same format your app expects:
 - Bluetooth ON.
 
 ## First-time setup
+From repo root:
 ```bash
-cd /Users/maasir/Projects/radiomap/mac
+cd mac
 chmod +x anchor.sh
 ./anchor.sh --build-only
 ```
@@ -41,6 +42,11 @@ Direct ID:
 Direct ID with optional meter coordinates:
 ```bash
 ./anchor.sh --id BLUEPOINT-01 --x 0 --y 5
+```
+
+Run from repo root without changing directory:
+```bash
+./mac/anchor.sh --id BLUEPOINT-01 --x 0 --y 5
 ```
 
 Stop advertising:
