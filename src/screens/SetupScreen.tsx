@@ -1,5 +1,18 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert, BackHandler, Platform } from 'react-native';
+import {
+    View,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    StyleSheet,
+    ScrollView,
+    Alert,
+    BackHandler,
+    Platform,
+    ActivityIndicator,
+    Modal,
+} from 'react-native';
+import { Bug, CheckCircle2 } from 'lucide-react-native';
 import { REFERENCE_ANCHOR_ID, useStore } from '../store/useStore';
 import { bleService, type BleDebugSnapshot } from '../services/BleService';
 import { TipsButton } from '../components/TipsButton';
@@ -17,13 +30,16 @@ export const SetupScreen: React.FC<{ onComplete: () => void }> = ({ onComplete }
         setAnchors,
         setAnchorPeripheral,
         isScanning,
-        setRole
+        setRole,
     } = useStore();
 
     const [width, setWidth] = useState(roomSize.width.toString());
     const [height, setHeight] = useState(roomSize.height.toString());
     const [phoneHeight, setPhoneHeight] = useState(phoneHeightRelative.toString());
     const [bleDebug, setBleDebug] = useState<BleDebugSnapshot>(() => bleService.getDebugSnapshot());
+    const [calibratingAnchorId, setCalibratingAnchorId] = useState<string | null>(null);
+    const [calibratedAValues, setCalibratedAValues] = useState<Record<string, number>>({});
+    const [isDebugModalVisible, setIsDebugModalVisible] = useState(false);
     const [anchorHeights, setAnchorHeights] = useState<Record<string, string>>(
         anchors.reduce((acc, anchor) => ({ ...acc, [anchor.id]: anchor.h.toString() }), {})
     );
@@ -87,11 +103,15 @@ export const SetupScreen: React.FC<{ onComplete: () => void }> = ({ onComplete }
 
     useEffect(() => {
         const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+            if (isDebugModalVisible) {
+                setIsDebugModalVisible(false);
+                return true;
+            }
             handleBack();
             return true;
         });
         return () => subscription.remove();
-    }, [step]);
+    }, [step, isDebugModalVisible]);
 
     useEffect(() => {
         if (step !== 3) return;
@@ -102,16 +122,48 @@ export const SetupScreen: React.FC<{ onComplete: () => void }> = ({ onComplete }
     }, [step, isScanning]);
 
     const calibrateAnchor = async (id: string) => {
-        const anchor = anchors.find(a => a.id === id);
-        if (anchor && anchor.currentRssi !== undefined) {
-            const newAnchors = anchors.map(a =>
-                a.id === id ? { ...a, A: anchor.currentRssi! } : a
-            );
-            setAnchors(newAnchors);
-            Alert.alert('Calibration', `Calibrated ${id} with A = ${anchor.currentRssi.toFixed(1)}`);
-        } else {
-            Alert.alert('Error', `No signal from ${id}. Ensure it's broadcasting or bind its device ID in BLE Debug.`);
+        if (!isScanning) {
+            Alert.alert('Calibration needs scan', 'Start Calibration Scan first.');
+            return;
         }
+        if (calibratingAnchorId) return;
+
+        setCalibratingAnchorId(id);
+        const sampleWindowMs = 2500;
+        const sampleIntervalMs = 200;
+        const samples: number[] = [];
+        let sampleCount = 0;
+        const maxSamples = Math.ceil(sampleWindowMs / sampleIntervalMs);
+
+        await new Promise<void>((resolve) => {
+            const timer = setInterval(() => {
+                sampleCount += 1;
+                const latest = useStore.getState().anchors.find((a) => a.id === id)?.currentRssi;
+                if (typeof latest === 'number' && Number.isFinite(latest)) {
+                    samples.push(latest);
+                }
+
+                if (sampleCount >= maxSamples) {
+                    clearInterval(timer);
+                    resolve();
+                }
+            }, sampleIntervalMs);
+        });
+
+        setCalibratingAnchorId(null);
+
+        if (samples.length < 3) {
+            Alert.alert('Calibration failed', `No stable signal from ${id}. Keep it broadcasting and try again.`);
+            return;
+        }
+
+        const average = samples.reduce((sum, value) => sum + value, 0) / samples.length;
+        const newAnchors = useStore.getState().anchors.map((a) =>
+            a.id === id ? { ...a, A: average } : a
+        );
+        setAnchors(newAnchors);
+        setCalibratedAValues((prev) => ({ ...prev, [id]: average }));
+        Alert.alert('Calibration', `Calibrated ${id} with A = ${average.toFixed(1)} dBm (${samples.length} samples / 2.5s).`);
     };
 
     const clearPeripheralBinding = (peripheralId: string) => {
@@ -233,10 +285,26 @@ export const SetupScreen: React.FC<{ onComplete: () => void }> = ({ onComplete }
                         {anchors.map(a => (
                             <TouchableOpacity
                                 key={a.id}
-                                style={styles.calibrateButton}
+                                style={[styles.calibrateButton, calibratingAnchorId && styles.calibrateButtonDisabled]}
+                                disabled={!!calibratingAnchorId}
                                 onPress={() => calibrateAnchor(a.id)}
                             >
-                                <Text style={styles.actionText}>Calibrate {a.id}</Text>
+                                <View style={styles.calibrateHeader}>
+                                    {calibratingAnchorId === a.id ? (
+                                        <View style={styles.calibratingHeader}>
+                                            <ActivityIndicator size="small" color="#eaf3ff" />
+                                            <Text style={styles.actionText}>Calibrating {a.id}...</Text>
+                                        </View>
+                                    ) : (
+                                        <Text style={styles.actionText}>Calibrate {a.id}</Text>
+                                    )}
+                                    {typeof calibratedAValues[a.id] === 'number' ? (
+                                        <View style={styles.calibratedChip}>
+                                            <CheckCircle2 size={14} color="#b8f7d4" />
+                                            <Text style={styles.calibratedChipText}>{`A=${calibratedAValues[a.id].toFixed(1)}`}</Text>
+                                        </View>
+                                    ) : null}
+                                </View>
                                 <Text style={styles.metaText}>Current RSSI: {a.currentRssi || 'N/A'} dBm</Text>
                                 <Text style={styles.metaTextSecondary}>
                                     {`Bound device: ${a.peripheralId ?? 'Auto-detect from broadcast payload'}`}
@@ -250,8 +318,35 @@ export const SetupScreen: React.FC<{ onComplete: () => void }> = ({ onComplete }
                             <Text style={styles.actionText}>{isScanning ? 'Stop Calibration Scan' : 'Start Calibration Scan'}</Text>
                         </TouchableOpacity>
 
-                        <View style={styles.debugCard}>
-                            <Text style={styles.debugTitle}>BLE Debug</Text>
+                        <TouchableOpacity style={styles.debugButton} onPress={() => setIsDebugModalVisible(true)}>
+                            <Bug size={16} color="#0d1320" />
+                            <Text style={styles.debugButtonText}>Open BLE Debug</Text>
+                        </TouchableOpacity>
+                    </View>
+                )}
+            </ScrollView>
+
+            <View style={styles.bottomBar}>
+                <TouchableOpacity style={styles.nextButton} onPress={handleNext}>
+                    <Text style={styles.nextButtonText}>{step === 3 ? 'Finish Setup' : 'Continue'}</Text>
+                </TouchableOpacity>
+            </View>
+
+            <Modal
+                transparent
+                animationType="slide"
+                visible={isDebugModalVisible}
+                onRequestClose={() => setIsDebugModalVisible(false)}
+            >
+                <View style={styles.modalBackdrop}>
+                    <View style={styles.modalCard}>
+                        <View style={styles.modalHeader}>
+                            <Text style={styles.modalTitle}>BLE Debug</Text>
+                            <TouchableOpacity style={styles.modalClose} onPress={() => setIsDebugModalVisible(false)}>
+                                <Text style={styles.modalCloseText}>Close</Text>
+                            </TouchableOpacity>
+                        </View>
+                        <ScrollView style={styles.modalScroll} contentContainerStyle={styles.modalContent}>
                             <Text style={styles.debugMeta}>
                                 {`Scan: ${bleDebug.isScanning ? 'ON' : 'OFF'} | Mode: ${bleDebug.scanMode}${bleDebug.fallbackScanApplied ? ' (fallback)' : ''}`}
                             </Text>
@@ -294,14 +389,10 @@ export const SetupScreen: React.FC<{ onComplete: () => void }> = ({ onComplete }
                                     </TouchableOpacity>
                                 ))
                             )}
-                        </View>
+                        </ScrollView>
                     </View>
-                )}
-
-                <TouchableOpacity style={styles.nextButton} onPress={handleNext}>
-                    <Text style={styles.nextButtonText}>{step === 3 ? 'Finish Setup' : 'Continue'}</Text>
-                </TouchableOpacity>
-            </ScrollView>
+                </View>
+            </Modal>
         </View>
     );
 };
@@ -309,7 +400,7 @@ export const SetupScreen: React.FC<{ onComplete: () => void }> = ({ onComplete }
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: ui.colors.bg },
     scroll: { flex: 1 },
-    contentContainer: { paddingHorizontal: ui.spacing.lg, paddingBottom: ui.spacing.xl },
+    contentContainer: { paddingHorizontal: ui.spacing.lg, paddingBottom: 128 },
     fixedHeader: {
         backgroundColor: ui.colors.bg,
         shadowColor: '#000',
@@ -403,6 +494,36 @@ const styles = StyleSheet.create({
         borderWidth: 1,
         borderColor: ui.colors.border,
     },
+    calibrateButtonDisabled: {
+        opacity: 0.7,
+    },
+    calibrateHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 8,
+    },
+    calibratingHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+    },
+    calibratedChip: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+        backgroundColor: '#0f4230',
+        borderColor: '#2a7a59',
+        borderWidth: 1,
+        borderRadius: ui.radius.pill,
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+    },
+    calibratedChipText: {
+        color: '#b8f7d4',
+        fontSize: 11,
+        fontWeight: '700',
+    },
     scanButton: {
         marginTop: 8,
         backgroundColor: '#145c54',
@@ -430,31 +551,98 @@ const styles = StyleSheet.create({
         fontSize: 11,
         marginTop: 2,
     },
+    debugButton: {
+        marginTop: ui.spacing.sm,
+        backgroundColor: '#dbeafe',
+        borderRadius: ui.radius.pill,
+        paddingVertical: 12,
+        paddingHorizontal: 16,
+        alignItems: 'center',
+        justifyContent: 'center',
+        flexDirection: 'row',
+        gap: 8,
+        borderWidth: 1,
+        borderColor: '#c6ddff',
+    },
+    debugButtonText: {
+        color: '#0d1320',
+        fontWeight: '800',
+        fontSize: 14,
+    },
+    bottomBar: {
+        position: 'absolute',
+        left: 0,
+        right: 0,
+        bottom: 0,
+        paddingHorizontal: ui.spacing.lg,
+        paddingTop: ui.spacing.sm,
+        paddingBottom: ui.spacing.lg,
+        backgroundColor: ui.colors.bg,
+        borderTopWidth: 1,
+        borderTopColor: ui.colors.border,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: -6 },
+        shadowOpacity: 0.24,
+        shadowRadius: 10,
+        elevation: 18,
+    },
     nextButton: {
-        marginTop: ui.spacing.md,
         backgroundColor: ui.colors.textPrimary,
         padding: 16,
         borderRadius: ui.radius.pill,
         alignItems: 'center',
+        width: '100%',
     },
     nextButtonText: {
         color: '#0d1320',
         fontSize: 16,
         fontWeight: '800',
     },
-    debugCard: {
-        marginTop: ui.spacing.md,
-        borderRadius: ui.radius.md,
+    modalBackdrop: {
+        flex: 1,
+        backgroundColor: 'rgba(2,6,23,0.65)',
+        justifyContent: 'flex-end',
+    },
+    modalCard: {
+        height: '82%',
+        backgroundColor: ui.colors.panel,
+        borderTopLeftRadius: ui.radius.lg,
+        borderTopRightRadius: ui.radius.lg,
         borderWidth: 1,
         borderColor: ui.colors.border,
-        padding: ui.spacing.md,
-        backgroundColor: '#101828',
+        paddingHorizontal: ui.spacing.lg,
+        paddingTop: ui.spacing.md,
+        paddingBottom: ui.spacing.md,
     },
-    debugTitle: {
+    modalHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: ui.spacing.sm,
+    },
+    modalTitle: {
         color: ui.colors.textPrimary,
-        fontSize: 14,
+        fontSize: 17,
         fontWeight: '800',
-        marginBottom: 6,
+    },
+    modalClose: {
+        borderWidth: 1,
+        borderColor: ui.colors.border,
+        backgroundColor: ui.colors.panelElevated,
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: ui.radius.pill,
+    },
+    modalCloseText: {
+        color: ui.colors.textPrimary,
+        fontWeight: '700',
+    },
+    modalScroll: {
+        flex: 1,
+        marginTop: ui.spacing.xs,
+    },
+    modalContent: {
+        paddingBottom: ui.spacing.xl + ui.spacing.lg,
     },
     debugMeta: {
         color: ui.colors.textSecondary,
