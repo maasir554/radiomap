@@ -78,14 +78,6 @@ export const AnchorModeScreen: React.FC = () => {
                 style={styles.scroll}
                 contentContainerStyle={styles.content}
             >
-                <View style={styles.card}>
-                    <View style={styles.row}>
-                        <Text style={styles.label}>Broadcasting</Text>
-                        <Switch value={isAdvertising} onValueChange={handleToggle} />
-                    </View>
-                    <Text style={styles.status}>{isAdvertising ? `Broadcasting as ${id}` : 'Stopped'}</Text>
-                </View>
-
                 <View style={styles.form}>
                     <Text style={styles.inputLabel}>Anchor ID (BLUEPOINT-*)</Text>
                     <TextInput
@@ -132,6 +124,22 @@ export const AnchorModeScreen: React.FC = () => {
                 <TouchableOpacity style={styles.backButton} onPress={goBack}>
                     <Text style={styles.backButtonText}>Exit Anchor Mode</Text>
                 </TouchableOpacity>
+
+                <TouchableOpacity
+                    activeOpacity={0.9}
+                    style={[styles.card, isAdvertising && styles.cardActive]}
+                    onPress={() => {
+                        void handleToggle(!isAdvertising);
+                    }}
+                >
+                    <View style={styles.row}>
+                        <Text style={styles.label}>Broadcasting</Text>
+                        <Switch value={isAdvertising} onValueChange={handleToggle} />
+                    </View>
+                    <Text style={[styles.status, isAdvertising && styles.statusActive]}>
+                        {isAdvertising ? `Broadcasting as ${id}` : 'Tap anywhere on this box to start broadcasting'}
+                    </Text>
+                </TouchableOpacity>
             </ScrollView>
         </View>
     );
@@ -156,11 +164,16 @@ const styles = StyleSheet.create({
         borderRadius: ui.radius.lg,
         borderWidth: 1,
         borderColor: ui.colors.border,
-        marginBottom: ui.spacing.md,
+        marginTop: ui.spacing.lg,
+    },
+    cardActive: {
+        backgroundColor: '#1f6ed4',
+        borderColor: '#82b4ff',
     },
     row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
     label: { fontSize: 17, fontWeight: '700', color: ui.colors.textPrimary },
     status: { marginTop: 10, color: ui.colors.textSecondary, fontSize: 14 },
+    statusActive: { color: '#eaf3ff' },
     form: {
         backgroundColor: ui.colors.panel,
         padding: ui.spacing.lg,

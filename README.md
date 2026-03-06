@@ -1,37 +1,54 @@
 # Radiomap
 
-## Build Android APK
+## Android Build Guide
 
 ### Prerequisites
-- Android SDK installed and available via `ANDROID_HOME` (or `sdk.dir` in `android/local.properties`).
-- JDK 21 recommended.
-- Dependencies installed: `npm install`.
+- Node.js + npm installed.
+- Android Studio / Android SDK installed.
+- JDK 21 installed.
+- `ANDROID_HOME` configured, or `android/local.properties` contains:
+  - `sdk.dir=/path/to/Android/sdk`
 
-### Debug APK (recommended for local testing)
+### 1) Clone and install deps
 ```bash
-cd /Users/maasir/Projects/radiomap/android
+git clone <your-repo-url>
+cd radiomap
+npm install
+```
+
+### 2) Build debug APK (recommended for testing)
+```bash
+cd android
 ./gradlew app:assembleDebug -x lint -x test --build-cache -PreactNativeArchitectures=arm64-v8a,armeabi-v7a
 ```
 
-Output APK:
-- `/Users/maasir/Projects/radiomap/android/app/build/outputs/apk/debug/app-debug.apk`
+Debug APK output:
+- `android/app/build/outputs/apk/debug/app-debug.apk`
 
-### Release APK
+### 3) Build release APK
 ```bash
-cd /Users/maasir/Projects/radiomap/android
+cd android
 ./gradlew app:assembleRelease -x lint -x test --build-cache -PreactNativeArchitectures=arm64-v8a,armeabi-v7a
 ```
 
-Output APK:
-- `/Users/maasir/Projects/radiomap/android/app/build/outputs/apk/release/app-release.apk`
+Release APK output:
+- `android/app/build/outputs/apk/release/app-release.apk`
 
-Note:
-- Current `release` build is configured with debug signing in `android/app/build.gradle`.  
-  For production distribution, replace with your own keystore/signing config.
-
-## Install APK On Phone (ADB)
+### 4) Install APK via ADB
+From repo root:
 ```bash
 adb devices
-adb install -r /Users/maasir/Projects/radiomap/android/app/build/outputs/apk/debug/app-debug.apk
+adb install -r android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
+## Run app with Expo dev client
+From repo root:
+```bash
+npx expo start --dev-client
+```
+
+## Notes
+- If Gradle cannot find SDK:
+  - set `ANDROID_HOME`, or
+  - create `android/local.properties` with valid `sdk.dir`.
+- Current `release` signing may still be debug/default; configure your own keystore for production distribution.
