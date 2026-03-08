@@ -89,12 +89,46 @@ export const useStore = create<AppState>((set) => ({
         ),
     })),
 
-    updateAnchorRssi: (id, rssi) => set((state) => ({
-        anchors: state.anchors.map((a) => a.id === id ? { ...a, currentRssi: rssi } : a)
-    })),
+    updateAnchorRssi: (id, rssi) => set((state) => {
+        if (!Number.isFinite(rssi)) {
+            return state;
+        }
+
+        const anchorIndex = state.anchors.findIndex((anchor) => anchor.id === id);
+        if (anchorIndex < 0) {
+            return state;
+        }
+
+        const previousRssi = state.anchors[anchorIndex]?.currentRssi;
+        if (typeof previousRssi === 'number' && Math.abs(previousRssi - rssi) < 0.05) {
+            return state;
+        }
+
+        const anchors = [...state.anchors];
+        anchors[anchorIndex] = { ...anchors[anchorIndex], currentRssi: rssi };
+        return { anchors };
+    }),
 
     currentPosition: null,
-    setCurrentPosition: (currentPosition) => set({ currentPosition }),
+    setCurrentPosition: (currentPosition) => set((state) => {
+        const prev = state.currentPosition;
+
+        if (prev === null && currentPosition === null) {
+            return state;
+        }
+
+        if (prev && currentPosition) {
+            const sameX = Math.abs(prev.x - currentPosition.x) < 0.001;
+            const sameY = Math.abs(prev.y - currentPosition.y) < 0.001;
+            const sameResidual = Math.abs(prev.residualError - currentPosition.residualError) < 0.001;
+
+            if (sameX && sameY && sameResidual) {
+                return state;
+            }
+        }
+
+        return { currentPosition };
+    }),
     isKalmanEnabled: true,
     setIsKalmanEnabled: (isKalmanEnabled) => set({ isKalmanEnabled }),
 
