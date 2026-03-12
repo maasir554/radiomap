@@ -7,7 +7,6 @@ import { RoleSelectionScreen } from './src/screens/RoleSelectionScreen';
 import { SetupScreen } from './src/screens/SetupScreen';
 import { TrackingScreen } from './src/screens/TrackingScreen';
 import { AnchorModeScreen } from './src/screens/AnchorModeScreen';
-import { LocalModeScreen } from './src/screens/LocalModeScreen';
 import { ui } from './src/theme/ui';
 
 export default function App() {
@@ -53,10 +52,6 @@ export default function App() {
                 return <SetupScreen onComplete={() => setSetupComplete(true)} />;
             }
             return <TrackingScreen onBack={() => setSetupComplete(false)} />;
-        }
-
-        if (role === 'local') {
-            return <LocalModeScreen />;
         }
 
         return null;

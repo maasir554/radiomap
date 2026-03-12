@@ -12,7 +12,7 @@ import {
     type EmitterSubscription,
 } from 'react-native';
 import { useStore } from '../store/useStore';
-import { compensateHeight, Kalman2D, rssiToDistance, OneEuroFilter, solveTrilateration } from '../utils/PositioningEngine';
+import { compensateHeight, Kalman2D, rssiToDistance, OneEuroFilter, solveTrilateration, type Position } from '../utils/PositioningEngine';
 import { anchorAdvertiser } from './AnchorAdvertiser';
 
 const BleManagerModule = NativeModules.BleManager;
@@ -51,6 +51,7 @@ class BleService {
     private filters: Map<string, OneEuroFilter> = new Map();
     private positionKalman: Kalman2D = new Kalman2D();
     private wasKalmanEnabled = false;
+    private latestRssiByAnchor: Map<string, number> = new Map();
     private discoverySubscription: EmitterSubscription | null = null;
     private discoveredPoller: ReturnType<typeof setInterval> | null = null;
     private scanFallbackTimer: ReturnType<typeof setTimeout> | null = null;
@@ -507,6 +508,8 @@ class BleService {
     private handleDiscovery(anchorId: string, rssi: number) {
         const store = useStore.getState();
 
+        this.latestRssiByAnchor.set(anchorId, rssi);
+
         // Initialize filter if not exists
         if (!this.filters.has(anchorId)) {
             // 5Hz (200ms) with default One-Euro parameters
@@ -517,56 +520,111 @@ class BleService {
         const smoothedRssi = filter.filter(rssi);
 
         store.updateAnchorRssi(anchorId, smoothedRssi);
-
-        // Trigger positioning update
-        this.calculatePosition();
     }
 
-    private calculatePosition() {
+    private calculatePositionFromDistances(distances: { id: string; distance: number }[]) {
         const { anchors, setCurrentPosition, phoneHeightRelative, isKalmanEnabled } = useStore.getState();
 
-        const validAnchors = anchors.filter(a => a.currentRssi !== undefined);
-        if (validAnchors.length >= 3) {
-            const distances = validAnchors.map(a => ({
-                id: a.id,
-                distance: Math.max(
-                    0.05,
-                    compensateHeight(rssiToDistance(a.currentRssi!, a.A), phoneHeightRelative, a.h ?? 0)
-                )
-            }));
-
-            const rawPos = solveTrilateration(anchors, distances);
-            if (!rawPos) {
-                setCurrentPosition(null);
-                return;
-            }
-
-            const timestamp = Date.now();
-            if (isKalmanEnabled) {
-                if (!this.wasKalmanEnabled) {
-                    this.positionKalman.reset(rawPos.x, rawPos.y, timestamp);
-                    this.wasKalmanEnabled = true;
-                    setCurrentPosition(rawPos);
-                    return;
-                }
-
-                const measurementNoise = Math.max(0.08, rawPos.residualError * rawPos.residualError * 0.35);
-                const filtered = this.positionKalman.update(rawPos.x, rawPos.y, timestamp, measurementNoise);
-                setCurrentPosition({
-                    ...rawPos,
-                    x: filtered.x,
-                    y: filtered.y,
-                });
-                return;
-            }
-
-            if (this.wasKalmanEnabled) {
-                this.positionKalman.reset(rawPos.x, rawPos.y, timestamp);
-                this.wasKalmanEnabled = false;
-            }
-
-            setCurrentPosition(rawPos);
+        if (distances.length < 3) {
+            setCurrentPosition(null);
+            return;
         }
+
+        const rawPos = solveTrilateration(anchors, distances);
+        if (!rawPos) {
+            setCurrentPosition(null);
+            return;
+        }
+
+        const timestamp = Date.now();
+        if (isKalmanEnabled) {
+            if (!this.wasKalmanEnabled) {
+                this.positionKalman.reset(rawPos.x, rawPos.y, timestamp);
+                this.wasKalmanEnabled = true;
+                setCurrentPosition(rawPos);
+                return;
+            }
+
+            const measurementNoise = Math.max(0.08, rawPos.residualError * rawPos.residualError * 0.35);
+            const filtered = this.positionKalman.update(rawPos.x, rawPos.y, timestamp, measurementNoise);
+            setCurrentPosition({
+                ...rawPos,
+                x: filtered.x,
+                y: filtered.y,
+            });
+            return;
+        }
+
+        if (this.wasKalmanEnabled) {
+            this.positionKalman.reset(rawPos.x, rawPos.y, timestamp);
+            this.wasKalmanEnabled = false;
+        }
+
+        setCurrentPosition(rawPos);
+    }
+
+    private async collectRssiSamples(durationMs: number, intervalMs: number) {
+        const samples = new Map<string, { sum: number; count: number }>();
+        const startAt = Date.now();
+
+        await new Promise<void>((resolve) => {
+            const timer = setInterval(() => {
+                const now = Date.now();
+                this.latestRssiByAnchor.forEach((value, id) => {
+                    if (!Number.isFinite(value)) return;
+                    const entry = samples.get(id) ?? { sum: 0, count: 0 };
+                    entry.sum += value;
+                    entry.count += 1;
+                    samples.set(id, entry);
+                });
+
+                if (now - startAt >= durationMs) {
+                    clearInterval(timer);
+                    resolve();
+                }
+            }, intervalMs);
+        });
+
+        return samples;
+    }
+
+    async capturePositionSample(durationMs: number = 2000, intervalMs: number = 200): Promise<Position | null> {
+        await this.ensureReady();
+
+        const store = useStore.getState();
+        const wasScanning = store.isScanning;
+        if (!wasScanning) {
+            await this.startScanWithMode(false).catch(() => undefined);
+            store.setIsScanning(true);
+            this.startDiscoveredPeripheralsPolling();
+            this.scheduleScanFallbackIfNeeded();
+        }
+
+        const samples = await this.collectRssiSamples(durationMs, intervalMs);
+        const { anchors, phoneHeightRelative } = useStore.getState();
+
+        const distances = anchors
+            .map((anchor) => {
+                const entry = samples.get(anchor.id);
+                if (!entry || entry.count === 0) return null;
+                const avgRssi = entry.sum / entry.count;
+                return {
+                    id: anchor.id,
+                    distance: Math.max(
+                        0.05,
+                        compensateHeight(rssiToDistance(avgRssi, anchor.A), phoneHeightRelative, anchor.h ?? 0)
+                    ),
+                };
+            })
+            .filter((item): item is { id: string; distance: number } => item !== null);
+
+        this.calculatePositionFromDistances(distances);
+
+        if (!wasScanning) {
+            await this.stopScanning();
+        }
+
+        return useStore.getState().currentPosition;
     }
 
     async startScanning() {
@@ -645,6 +703,7 @@ class BleService {
         this.filters.clear();
         this.positionKalman = new Kalman2D();
         this.wasKalmanEnabled = false;
+        this.latestRssiByAnchor.clear();
         this.scanMode = 'primary';
         this.callbackEvents = 0;
         this.pollEvents = 0;

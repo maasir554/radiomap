@@ -48,13 +48,6 @@ export const RoleSelectionScreen: React.FC = () => {
                     <Text style={styles.buttonSubtext}>Use this on 4 corner phones to broadcast BLUEPOINT IDs.</Text>
                 </TouchableOpacity>
 
-                <TouchableOpacity
-                    style={[styles.button, styles.localButton]}
-                    onPress={() => setRole('local')}
-                >
-                    <Text style={styles.buttonText}>Local Mode</Text>
-                    <Text style={styles.buttonSubtext}>No anchors required. Uses phone sensors only with dynamic 10cm trail map.</Text>
-                </TouchableOpacity>
             </ScrollView>
         </View>
     );
@@ -99,9 +92,6 @@ const styles = StyleSheet.create({
     },
     anchorButton: {
         backgroundColor: '#174a42',
-    },
-    localButton: {
-        backgroundColor: '#3a264f',
     },
     buttonText: {
         color: ui.colors.textPrimary,

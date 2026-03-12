@@ -11,6 +11,7 @@ import { ui } from '../theme/ui';
 export const TrackingScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     const { currentPosition, isScanning, anchors, isKalmanEnabled, setIsKalmanEnabled } = useStore();
     const [logs, setLogs] = useState<{ t: number, x: number, y: number }[]>([]);
+    const [isCapturing, setIsCapturing] = useState(false);
     const [isMapFullscreen, setIsMapFullscreen] = useState(false);
     const modalTopInset = Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) : 0;
 
@@ -39,6 +40,19 @@ export const TrackingScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => 
 
     const toggleKalman = () => {
         setIsKalmanEnabled(!isKalmanEnabled);
+    };
+
+    const capturePosition = async () => {
+        if (isCapturing) return;
+        setIsCapturing(true);
+        try {
+            await bleService.capturePositionSample(2000, 200);
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'Failed to capture position.';
+            Alert.alert('BLE error', message);
+        } finally {
+            setIsCapturing(false);
+        }
     };
 
     const exportData = async () => {
@@ -118,6 +132,18 @@ export const TrackingScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => 
                     <Map2D onRequestFullscreen={() => setIsMapFullscreen(true)} />
                 </View>
 
+                <TouchableOpacity
+                    style={[styles.captureButton, isCapturing && styles.captureButtonBusy]}
+                    onPress={capturePosition}
+                    disabled={isCapturing}
+                    accessibilityRole="button"
+                    accessibilityLabel="Capture position"
+                >
+                    <Text style={styles.captureButtonText}>
+                        {isCapturing ? 'Capturing (2s)...' : 'Capture Position'}
+                    </Text>
+                </TouchableOpacity>
+
                 <View style={styles.statsCard}>
                     <Text style={styles.sectionTitle}>Position</Text>
                     {currentPosition ? (
@@ -132,7 +158,7 @@ export const TrackingScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => 
                             </Text>
                         </View>
                     ) : (
-                        <Text style={styles.placeholder}>Waiting for at least 3 anchors...</Text>
+                        <Text style={styles.placeholder}>Press Capture Position to update.</Text>
                     )}
                 </View>
 
@@ -332,5 +358,22 @@ const styles = StyleSheet.create({
         paddingHorizontal: ui.spacing.md,
         paddingTop: ui.spacing.md,
         paddingBottom: ui.spacing.lg,
+    },
+    captureButton: {
+        marginTop: ui.spacing.md,
+        paddingVertical: 14,
+        borderRadius: ui.radius.pill,
+        backgroundColor: ui.colors.textPrimary,
+        alignItems: 'center',
+        borderWidth: 1,
+        borderColor: '#d8e1f0',
+    },
+    captureButtonBusy: {
+        opacity: 0.7,
+    },
+    captureButtonText: {
+        color: '#0d1320',
+        fontSize: 15,
+        fontWeight: '900',
     },
 });

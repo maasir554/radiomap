@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { Anchor, Position } from '../utils/PositioningEngine';
 
-export type AppRole = 'mobile' | 'anchor' | 'local' | 'none';
+export type AppRole = 'mobile' | 'anchor' | 'none';
 export const REFERENCE_ANCHOR_ID = 'BLUEPOINT-01';
 type AnchorState = Anchor & { A: number, h: number, peripheralId?: string, currentRssi?: number, distance?: number };
 

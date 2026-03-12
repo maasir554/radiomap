@@ -49,16 +49,6 @@ const SLIDES: TipSlide[] = [
         device: 'All Devices',
         body: 'If position is not updating, confirm anchors are still broadcasting, IDs are correct, and rerun calibration.',
     },
-    {
-        title: 'Local Mode',
-        device: 'Single Phone',
-        body: 'Open Local Mode for anchor-free tracking. It uses your phone sensors and auto-starts recording from origin (0,0).',
-    },
-    {
-        title: 'Local Trail',
-        device: 'Single Phone',
-        body: 'Walk naturally and keep phone orientation steady. The app records only new 10cm coordinates to build the visited path map.',
-    },
 ];
 
 export const TipsButton: React.FC = () => {
